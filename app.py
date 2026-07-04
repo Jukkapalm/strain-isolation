@@ -1,5 +1,6 @@
 import streamlit as st
 import requests
+import time
 
 # Sivun asetukset
 st.set_page_config(
@@ -90,6 +91,8 @@ if "primary_lang" not in st.session_state:
 if "warning_message" not in st.session_state:
     st.session_state.warning_message = "SYSTEM NOTICE: Awaiting target user ID input."
 
+progress_placeholder = st.empty()
+
 #Sidebar
 with st.sidebar:
     st.markdown('<div class="sidebar-title">Control Panel</div>', unsafe_allow_html=True)
@@ -105,6 +108,29 @@ with st.sidebar:
     # Scan button
     scan_button = st.button("START SCAN")
 
+# Main content
+st.markdown(
+    '<div class="main-title"><span>G</span>enetic <span>C</span>ode <span>A</span>nalysis</div>', 
+    unsafe_allow_html=True
+)
+
+metrics_placeholder = st.empty()
+
+def render_metrics(repos, lang, status):
+    with metrics_placeholder.container():
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric(label="Repositories Scanned", value=repos)
+        with col2:
+            st.metric(label="Dominant Strain", value=lang)
+        with col3:
+            st.metric(label="Analysis Status", value=status)
+
+progress_placeholder = st.empty()
+warning_placeholder = st.empty()
+
+st.markdown("---")
+
 if scan_button:
     if not username_input.strip():
         st.session_state.search_status = "INACTIVE"
@@ -112,7 +138,10 @@ if scan_button:
         st.session_state.primary_lang = "None"
         st.session_state.warning_message = "SYSTEM NOTICE: Target user ID is required to initiate scan."
     else:
-        st.session_state.search_status = "PENDING"
+        st.session_state.warning_message = ""
+        warning_placeholder.empty()
+
+        render_metrics(repos="0", lang="", status="PENDING")
 
         headers = {}
         if "GITHUB_TOKEN" in st.secrets:
@@ -130,16 +159,34 @@ if scan_button:
                 st.session_state.warning_message = f"SYSTEM NOTICE: User '{username_input}' not found in GitHub registry."
             elif response.status_code == 200:
                 repos = response.json()
+                target_repos_count = len(repos)
 
-                if not repos:
+                if target_repos_count == 0:
                     st.session_state.search_status = "COMPLETE"
                     st.session_state.repo_count = "0"
                     st.session_state.primary_lang = "None"
                     st.session_state.warning_message = f"SYSTEM NOTICE: Target user has 0 public repositories."
                 else:
+                    progress_bar = progress_placeholder.progress(0.0)
+
+                    steps = 25
+                    for i in range(1, steps + 1):
+                        progress_percentage = i / steps
+                        progress_bar.progress(progress_percentage)
+
+                        current_count = int(progress_percentage * target_repos_count)
+                        render_metrics(repos=str(current_count), lang="", status="PENDING")
+
+                        time.sleep(0.05)
+
+                    time.sleep(1)
+
                     st.session_state.search_status = "COMPLETE"
-                    st.session_state.repo_count = str(len(repos))
-                    st.session_state.warning_message = ""
+                    st.session_state.repo_count = str(target_repos_count)
+                    st.session_state.primary_lang = "TBD"
+
+                    progress_placeholder.empty()
+
             else:
                 st.session_state.search_status = "INACTIVE"
                 st.session_state.warning_message = f"SYSTEM NOTICE: GitHub API failure ({response.status_code})."
@@ -147,22 +194,11 @@ if scan_button:
             st.session_state.search_status = "INACTIVE"
             st.session_state.warning_message = "SYSTEM NOTICE: Security protocol block or connection timeout."
 
-# Main content
-st.markdown(
-    '<div class="main-title"><span>G</span>enetic <span>C</span>ode <span>A</span>nalysis</div>', 
-    unsafe_allow_html=True
+render_metrics(
+    repos=st.session_state.repo_count, 
+    lang=st.session_state.primary_lang, 
+    status=st.session_state.search_status
 )
 
-# Mittarit
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric(label="Repositories Scanned", value=st.session_state.repo_count)
-with col2:
-    st.metric(label="Dominant Strain", value=st.session_state.primary_lang)
-with col3:
-    st.metric(label="Analysis Status", value=st.session_state.search_status)
-
-st.markdown("---")
-
 if st.session_state.warning_message:
-    st.warning(st.session_state.warning_message)
+    warning_placeholder.warning(st.session_state.warning_message)
